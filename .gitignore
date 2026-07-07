@@ -1,0 +1,39 @@
+# Delphi / Lazarus
+*.dcu
+*.dpu
+*.exe
+*.dll
+*.bpl
+*.bpi
+*.dcp
+*.dcpil
+*.drc
+*.identcache
+*.tvsconfig
+*.local
+*.stat
+*.dof
+*.cfg
+__history/
+__recovery/
+*.~*
+*.bak
+*.lps
+*.lpi.bak
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo
+*.VC.db
+.idea/
+
+# Логи
+*.log
+logs/
+
+# Конфиги с секретами
+config.local.ini
+
+# Бинари паттернов (только JSON в репо)
+patterns/*.bin

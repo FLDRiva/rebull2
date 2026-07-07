@@ -1,0 +1,22 @@
+{
+  "chronicle": "Main",
+  "version": "0.1",
+  "note": "Паттерны для хроники Main. Wildcards: ?? = любой байт. offset = смещение от найденного адреса до цели.",
+  "patterns": {
+    "send_packet": {
+      "pattern": "55 8B EC 83 EC ?? 53 56 57 8B 7D 08",
+      "offset": 0,
+      "description": "Функция отправки пакета (GameClient::SendPacket). Требует уточнения под конкретный билд клиента."
+    },
+    "recv_packet": {
+      "pattern": "55 8B EC 51 53 56 57 8B F1 8B 4D 08",
+      "offset": 0,
+      "description": "Функция обработки входящего пакета. Требует уточнения."
+    },
+    "blowfish_init": {
+      "pattern": "55 8B EC 83 EC 08 ?? ?? ?? ?? ?? 8B 45 08",
+      "offset": 0,
+      "description": "Инициализация Blowfish. Адрес ключа извлекается через анализ аргументов."
+    }
+  }
+}
