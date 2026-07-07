@@ -28,6 +28,9 @@ __recovery/
 *.VC.db
 .idea/
 
+# Скомпилированные тесты
+tests/bin/
+
 # Логи
 *.log
 logs/
