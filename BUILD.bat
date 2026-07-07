@@ -2,9 +2,15 @@
 setlocal enabledelayedexpansion
 
 :: ========================================================
-:: BUILD.bat — сборка rebull2 под Windows (Delphi или FPC)
+:: BUILD.bat — сборка rebull2 под Windows
 :: Запускать из корня репозитория: BUILD.bat [delphi|fpc]
-:: По умолчанию — delphi
+::
+:: Артефакты в bin\:
+::   rebull2.dll      — payload (IAT hooks + pipe server)
+::   version.dll      — прокси для DLL Hijacking
+::   rebull2_ui.exe   — UI
+::
+:: Деплой: скопировать version.dll + rebull2.dll в папку L2.exe
 :: ========================================================
 
 set MODE=%1
@@ -15,18 +21,16 @@ echo === rebull2 Build Script ===
 echo Mode: %MODE%
 echo.
 
-:: Создаём выходные директории
 if not exist bin       mkdir bin
 if not exist obj\dll   mkdir obj\dll
-if not exist obj\inj   mkdir obj\inj
+if not exist obj\proxy mkdir obj\proxy
 if not exist obj\ui    mkdir obj\ui
 
 :: --------------------------------------------------------
-:: DELPHI (dcc32.exe должен быть в PATH или прописан ниже)
+:: DELPHI
 :: --------------------------------------------------------
 if /I "%MODE%"=="delphi" (
 
-  :: Попытка найти dcc32.exe автоматически
   set DCC32=
   for /d %%D in ("%programfiles(x86)%\Embarcadero\Studio\*") do (
     if exist "%%D\bin\dcc32.exe" set DCC32=%%D\bin\dcc32.exe
@@ -34,48 +38,39 @@ if /I "%MODE%"=="delphi" (
   for /d %%D in ("%programfiles%\Embarcadero\Studio\*") do (
     if exist "%%D\bin\dcc32.exe" set DCC32=%%D\bin\dcc32.exe
   )
-
   if "!DCC32!"=="" (
-    echo [ERROR] dcc32.exe не найден. Укажите путь вручную в BUILD.bat
+    echo [ERROR] dcc32.exe не найден. Укажите путь вручную.
     exit /b 1
   )
   echo Используем: !DCC32!
 
-  :: ---- rebull2.dll ----
   echo.
-  echo [1/3] Сборка rebull2.dll...
+  echo [1/3] Сборка rebull2.dll (payload)...
   "!DCC32!" ^
     src\dll\rebull2.dpr ^
     -I include ^
     -U include;src\dll\core;src\dll\ipc ^
-    -E bin ^
-    -N obj\dll ^
-    -DWIN32 ^
-    -$O+ -$D- ^
-    -WD
+    -E bin -N obj\dll ^
+    -DWINDOWS -$O+ -$D- -WD
   if errorlevel 1 ( echo [FAIL] rebull2.dll && exit /b 1 )
   echo [OK] bin\rebull2.dll
 
-  :: ---- rebull2_injector.exe ----
   echo.
-  echo [2/3] Сборка rebull2_injector.exe...
+  echo [2/3] Сборка version.dll (proxy)...
   "!DCC32!" ^
-    src\injector\rebull2_injector.dpr ^
-    -E bin ^
-    -N obj\inj ^
-    -$O+ -$D-
-  if errorlevel 1 ( echo [FAIL] rebull2_injector.exe && exit /b 1 )
-  echo [OK] bin\rebull2_injector.exe
+    src\proxy\VersionProxy.dpr ^
+    -E bin -N obj\proxy ^
+    -$O+ -$D- -WD
+  if errorlevel 1 ( echo [FAIL] version.dll && exit /b 1 )
+  echo [OK] bin\version.dll
 
-  :: ---- rebull2_ui.exe ----
   echo.
   echo [3/3] Сборка rebull2_ui.exe...
   "!DCC32!" ^
     src\ui\rebull2_ui.dpr ^
     -I include ^
     -U include;src\ui\ipc;src\ui\forms ^
-    -E bin ^
-    -N obj\ui ^
+    -E bin -N obj\ui ^
     -$O+ -$D-
   if errorlevel 1 ( echo [FAIL] rebull2_ui.exe && exit /b 1 )
   echo [OK] bin\rebull2_ui.exe
@@ -84,43 +79,33 @@ if /I "%MODE%"=="delphi" (
 )
 
 :: --------------------------------------------------------
-:: FPC (fpc.exe должен быть в PATH)
+:: FPC
 :: --------------------------------------------------------
 if /I "%MODE%"=="fpc" (
 
   where fpc >nul 2>&1
   if errorlevel 1 ( echo [ERROR] fpc.exe не найден в PATH && exit /b 1 )
 
-  :: ---- rebull2.dll ----
   echo.
   echo [1/3] Сборка rebull2.dll...
-  fpc ^
-    -Twindows -Pi386 ^
-    -WD ^
-    -DWINDOWS ^
+  fpc -Twindows -Pi386 -WD -DWINDOWS ^
     -Fu include -Fu src\dll\core -Fu src\dll\ipc ^
     -FE bin -FU obj\dll ^
     src\dll\rebull2.dpr
   if errorlevel 1 ( echo [FAIL] rebull2.dll && exit /b 1 )
   echo [OK] bin\rebull2.dll
 
-  :: ---- rebull2_injector.exe ----
   echo.
-  echo [2/3] Сборка rebull2_injector.exe...
-  fpc ^
-    -Twindows -Pi386 ^
-    -WC ^
-    -FE bin -FU obj\inj ^
-    src\injector\rebull2_injector.dpr
-  if errorlevel 1 ( echo [FAIL] rebull2_injector.exe && exit /b 1 )
-  echo [OK] bin\rebull2_injector.exe
+  echo [2/3] Сборка version.dll...
+  fpc -Twindows -Pi386 -WD -DWINDOWS ^
+    -FE bin -FU obj\proxy ^
+    src\proxy\VersionProxy.dpr
+  if errorlevel 1 ( echo [FAIL] version.dll && exit /b 1 )
+  echo [OK] bin\version.dll
 
-  :: ---- rebull2_ui.exe ----
   echo.
   echo [3/3] Сборка rebull2_ui.exe...
-  fpc ^
-    -Twindows -Pi386 ^
-    -DWINDOWS ^
+  fpc -Twindows -Pi386 -WG -DWINDOWS ^
     -Fu include -Fu src\ui\ipc -Fu src\ui\forms ^
     -FE bin -FU obj\ui ^
     src\ui\rebull2_ui.dpr
@@ -130,12 +115,18 @@ if /I "%MODE%"=="fpc" (
   goto :done
 )
 
-echo [ERROR] Неизвестный режим: %MODE%. Используй: BUILD.bat delphi  или  BUILD.bat fpc
+echo [ERROR] Неизвестный режим. Используй: BUILD.bat delphi  или  BUILD.bat fpc
 exit /b 1
 
 :done
 echo.
-echo === Сборка завершена ===
-echo Бинарники в папке bin\:
+echo === Готово ===
+echo.
+echo Деплой:
+echo   1. Скопируй bin\version.dll  ^→ папка с L2.exe
+echo   2. Скопируй bin\rebull2.dll  ^→ папка с L2.exe
+echo   3. Запусти rebull2_ui.exe
+echo   4. Запусти L2.exe
+echo.
 dir /b bin\
 echo.

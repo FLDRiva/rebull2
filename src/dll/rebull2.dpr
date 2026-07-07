@@ -1,55 +1,55 @@
 library rebull2;
 
 {
-  rebull2.dll — инжектируемая DLL для перехвата пакетов Lineage 2 (хроника Main).
+  rebull2.dll — payload для DLL Hijacking через version.dll.
 
-  Точка входа: DllMain обрабатывает DLL_PROCESS_ATTACH / DLL_PROCESS_DETACH.
-  При загрузке:
-    1. Создаёт именованный Pipe-сервер (IPC с UI)
-    2. Устанавливает хуки на ws2_32.send/recv/WSASend/WSARecv
-  При выгрузке:
-    1. Снимает хуки
-    2. Останавливает Pipe-сервер
+  Загружается автоматически нашей version.dll при старте L2.
+  Использует IAT hooking вместо inline patching:
+    - ws2_32.dll остаётся нетронутым (GameGuard его сканирует)
+    - Подменяем указатели в IAT самого L2.exe
 }
+
+{$IFDEF FPC}{$MODE DELPHI}{$ENDIF}
 
 uses
   Windows,
   SysUtils,
-  Hooks     in 'core\Hooks.pas',
+  IATHook  in 'core\IATHook.pas',
   PipeServer in 'ipc\PipeServer.pas',
-  Protocol  in '..\..\include\Protocol.pas';
-
-{$R *.res}
+  Protocol in '..\..\include\Protocol.pas';
 
 var
   GPipe : TPipeServer = nil;
 
-// Callback из хуков → отправляем пакет в UI через pipe
 procedure OnPacketCaptured(Direction: Byte; Data: PByte; Len: Integer);
 begin
   try
     if Assigned(GPipe) then
       GPipe.SendPacket(Direction, Data, Cardinal(Len));
-  except
-    // Никогда не роняем клиент — глотаем все исключения в callback
-  end;
+  except end;
 end;
 
-// Callback из UI → обрабатываем команды управления
 procedure OnUICommand(Cmd: Byte; Data: PByte; Len: Cardinal);
+var
+  hL2: HMODULE;
 begin
   case Cmd of
     CMD_START:
       begin
-        HooksInstall(OnPacketCaptured);
-        if Assigned(GPipe) then
-          GPipe.SendLog('Перехват запущен');
+        // Хукаем IAT основного модуля (L2.exe = HInstance=0 → GetModuleHandle(nil))
+        hL2 := GetModuleHandle(nil);
+        if IATHooksInstall(hL2, OnPacketCaptured) then
+        begin
+          if Assigned(GPipe) then GPipe.SendLog('IAT хуки установлены');
+        end
+        else
+          if Assigned(GPipe) then GPipe.SendLog('WARN: IAT хуки не найдены (ws2_32 не импортируется?)');
       end;
+
     CMD_STOP:
       begin
-        HooksRemove;
-        if Assigned(GPipe) then
-          GPipe.SendLog('Перехват остановлен');
+        IATHooksRemove;
+        if Assigned(GPipe) then GPipe.SendLog('Хуки сняты');
       end;
   end;
 end;
@@ -61,23 +61,19 @@ begin
       begin
         DisableThreadLibraryCalls(HInstance);
         try
-          // Pipe-сервер запускается первым — UI может подключиться до хуков
           GPipe := TPipeServer.Create(OnUICommand);
-          // Хуки ставим сразу — перехватываем всё с момента загрузки
-          HooksInstall(OnPacketCaptured);
-        except
-          // Провал инициализации не должен крашить клиент
-        end;
+          // Не ставим хуки сразу — ждём CMD_START от UI.
+          // Это даёт время GameGuard завершить инициализацию и успокоиться.
+          if Assigned(GPipe) then GPipe.SendLog('rebull2.dll загружена');
+        except end;
       end;
 
     DLL_PROCESS_DETACH:
       begin
         try
-          HooksRemove;
+          IATHooksRemove;
           FreeAndNil(GPipe);
-        except
-          // Аналогично — исключения при выгрузке недопустимы
-        end;
+        except end;
       end;
   end;
 end;
